@@ -3,7 +3,7 @@ import createError from "http-errors"
 import { adminOnlyMiddleware } from "../../auth/admin.js"
 import { basicAuthMiddleware } from "../../auth/basic.js"
 import { JWTAuthMiddleware } from "../../auth/token.js"
-import { generateAccessToken } from "../../auth/tools.js"
+import { authenticateUser, verifyRefreshTokenAndGenerateNewTokens } from "../../auth/tools.js"
 import UsersModel from "./model.js"
 
 const usersRouter = express.Router()
@@ -102,13 +102,29 @@ usersRouter.post("/login", async (req, res, next) => {
     const user = await UsersModel.checkCredentials(email, password)
 
     if (user) {
-      // 3. If credentials are fine --> generate an access token (JWT) then send it as a response
-      const accessToken = await generateAccessToken({ _id: user._id, role: user.role })
-      res.send({ accessToken })
+      // 3. If credentials are fine --> generate an access token & refresh token (JWT) then send them as a response
+      const { accessToken, refreshToken } = await authenticateUser(user)
+
+      res.send({ accessToken, refreshToken })
     } else {
       // 4. If credentials are not ok --> throw an error (401)
       next(createError(401, "Credentials are not ok!"))
     }
+  } catch (error) {
+    next(error)
+  }
+})
+
+usersRouter.post("/refreshTokens", async (req, res, next) => {
+  try {
+    // 1. Obtain refreshToken from req.body
+    const { currentRefreshToken } = req.body
+
+    // 2. Check the validity of that token (check if it is not expired, check if it hasn'been compromised, check if it is the same as the one we have in db)
+    // 3. If everything is fine --> generate a new pair of tokens (accessToken2 & refreshToken2)
+    const { accessToken, refreshToken } = await verifyRefreshTokenAndGenerateNewTokens(currentRefreshToken)
+    // 4. Send them back as a response
+    res.send({ accessToken, refreshToken })
   } catch (error) {
     next(error)
   }
